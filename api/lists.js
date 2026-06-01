@@ -2,6 +2,32 @@ import { sql } from './_db.js'
 
 const BATCH = 50
 
+const ANIME_COLS = [
+  'user_id', 'mal_anime_id', 'title', 'image_url', 'score', 'status',
+  'genres', 'studios', 'mean_score', 'popularity', 'season', 'year',
+  'num_episodes', 'media_type', 'cached_at'
+]
+
+const MANGA_COLS = [
+  'user_id', 'mal_manga_id', 'title', 'image_url', 'score', 'status',
+  'genres', 'authors', 'mean_score', 'popularity', 'num_chapters',
+  'num_volumes', 'media_type', 'cached_at'
+]
+
+async function insertBatch(table, columns, rows) {
+  const values = []
+  const placeholders = rows.map((row, i) => {
+    const base = i * columns.length
+    columns.forEach(col => values.push(row[col] ?? null))
+    return `(${columns.map((_, j) => `$${base + j + 1}`).join(', ')})`
+  }).join(', ')
+
+  await sql.query(
+    `INSERT INTO ${table} (${columns.join(', ')}) VALUES ${placeholders}`,
+    values
+  )
+}
+
 export default async function handler(req, res) {
   const { userId, type } = req.query
 
@@ -40,7 +66,7 @@ export default async function handler(req, res) {
         }))
 
         for (let i = 0; i < rows.length; i += BATCH) {
-          await sql`INSERT INTO user_manga_list ${sql(rows.slice(i, i + BATCH))}`
+          await insertBatch('user_manga_list', MANGA_COLS, rows.slice(i, i + BATCH))
         }
         return res.status(200).json({ count: rows.length })
       }
@@ -68,7 +94,7 @@ export default async function handler(req, res) {
       }))
 
       for (let i = 0; i < rows.length; i += BATCH) {
-        await sql`INSERT INTO user_anime_list ${sql(rows.slice(i, i + BATCH))}`
+        await insertBatch('user_anime_list', ANIME_COLS, rows.slice(i, i + BATCH))
       }
       return res.status(200).json({ count: rows.length })
     }
