@@ -323,16 +323,20 @@ export const useRecommendations = () => {
         return
       }
 
-      const userList = type === 'anime' 
+      const userList = type === 'anime'
         ? await getUserAnimeListCache(user.id)
         : await getUserMangaListCache(user.id)
-      
-      const ratedItems = userList.filter(item => 
-        item.score > 0 && 
+
+      if (userList.length === 0) {
+        setError('Your list hasn\'t been synced yet. Please log out and log back in to load your data.')
+        return
+      }
+
+      const ratedItems = userList.filter(item =>
+        item.score > 0 &&
         (item.status === 'completed' || item.status === 'watching' || item.status === 'reading')
       )
-      
-      // Check user ratings
+
       if (ratedItems.length === 0) {
         setNoRatings(true)
         setRecommendations([])
