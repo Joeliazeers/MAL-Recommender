@@ -17,9 +17,10 @@ dist-ssr
 .env.local
 .env.production
 
-# Supabase
-supabase/.temp
-.supabase
+# Neon
+neon/.temp
+neon/.branches
+.neon
 
 # Editor directories and files
 .vscode/*

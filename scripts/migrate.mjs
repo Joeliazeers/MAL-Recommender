@@ -16,7 +16,7 @@ if (!DATABASE_URL) {
 
 const pool = new Pool({ connectionString: DATABASE_URL })
 
-const migrationsDir = join(__dirname, '../supabase/migrations')
+const migrationsDir = join(__dirname, '../neon/migrations')
 const files = readdirSync(migrationsDir)
   .filter(f => f.endsWith('.sql'))
   .sort()
