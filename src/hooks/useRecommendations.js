@@ -385,16 +385,19 @@ export const useRecommendations = () => {
 
   const loadCachedRecommendations = useCallback((type, mode) => {
     if (!user) return { hasCached: false }
-    
+
+    // Always clear feedback states when switching type/mode
+    setNoRatings(false)
+    setError(null)
+
     const { canGenerate, cached } = checkCooldown(type, mode)
-    
+
     if (!canGenerate && cached) {
       setRecommendations(cached)
       setHasGeneratedToday(true)
       return { hasCached: true }
     }
-    
-    // No cache - clear recommendations
+
     setRecommendations([])
     setHasGeneratedToday(false)
     return { hasCached: false }

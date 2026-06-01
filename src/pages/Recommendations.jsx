@@ -60,10 +60,6 @@ const Recommendations = () => {
     return () => clearInterval(interval)
   }, [hasGenerated, hasGeneratedToday, getTimeUntilReset, formatCountdown])
 
-  const _setType = (newType) => {
-    setSearchParams({ type: newType, mode })
-  }
-
   const setMode = (newMode) => {
     setSearchParams({ type, mode: newMode })
   }
@@ -199,7 +195,7 @@ const Recommendations = () => {
         </div>
 
         {/* Results */}
-        {hasGenerated || hasGeneratedToday || recommendations.length > 0 || noRatings || error ? (
+        {hasGenerated || hasGeneratedToday || recommendations.length > 0 ? (
           <>
             <RecommendationList 
               recommendations={recommendations}
