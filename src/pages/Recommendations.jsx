@@ -31,14 +31,13 @@ const Recommendations = () => {
   } = useRecommendations()
 
   // Load cached recommendations when type/mode changes
+  // hasGenerated intentionally excluded from deps — including it causes the effect to
+  // reset hasGenerated=false immediately after handleGenerate sets it to true
   useEffect(() => {
     const { hasCached } = loadCachedRecommendations(type, mode)
-    // Sync local state with cached data
-    if (hasCached !== hasGenerated) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setHasGenerated(hasCached)
-    }
-  }, [type, mode, loadCachedRecommendations, hasGenerated])
+    setHasGenerated(hasCached)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, mode, loadCachedRecommendations])
 
   // Live countdown timer with auto-refresh on reset
   useEffect(() => {
@@ -200,7 +199,7 @@ const Recommendations = () => {
         </div>
 
         {/* Results */}
-        {hasGenerated || hasGeneratedToday || recommendations.length > 0 ? (
+        {hasGenerated || hasGeneratedToday || recommendations.length > 0 || noRatings || error ? (
           <>
             <RecommendationList 
               recommendations={recommendations}

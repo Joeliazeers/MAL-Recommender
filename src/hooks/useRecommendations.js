@@ -116,78 +116,79 @@ export const useRecommendations = () => {
 
   const getNewRecommendations = useCallback(async (type = 'anime') => {
     if (!user) return
-    
-    // Check database cache first
-    const cachedData = await getRecommendationCache(user.id, type, 'new')
-    if (cachedData && cachedData.recommendations) {
-      console.log('Loading recommendations from cache')
-      setRecommendations(cachedData.recommendations)
-      setHasGeneratedToday(true)
-      return
-    }
-    
-    // Check cooldown
-    const { canGenerate, cached } = checkCooldown(type, 'new')
-    if (!canGenerate && cached) {
-      setRecommendations(cached)
-      return
-    }
-    
+
     setLoading(true)
     setError(null)
     setNoRatings(false)
     setCooldownRemaining(null)
-    
+
     try {
+      // Check database cache first
+      try {
+        const cachedData = await getRecommendationCache(user.id, type, 'new')
+        if (cachedData && cachedData.recommendations) {
+          setRecommendations(cachedData.recommendations)
+          setHasGeneratedToday(true)
+          return
+        }
+      } catch {
+        // cache check failing is non-fatal, continue with fresh generation
+      }
+
+      // Check localStorage cooldown
+      const { canGenerate, cached } = checkCooldown(type, 'new')
+      if (!canGenerate && cached) {
+        setRecommendations(cached)
+        return
+      }
+
       // Fetch user preferences
-      const userPrefs = await getUserPreferences(user.id)
+      const userPrefs = await getUserPreferences(user.id).catch(() => null)
       const favoriteGenres = userPrefs?.favorite_genres || []
       const excludedGenres = userPrefs?.excluded_genres || []
       const minScore = userPrefs?.min_score || 7.0
-      
-      const userList = type === 'anime' 
+
+      const userList = type === 'anime'
         ? await getUserAnimeListCache(user.id)
         : await getUserMangaListCache(user.id)
-      
+
       const userListIds = new Set(
         userList.map(item => item.mal_anime_id || item.mal_manga_id)
       )
-      
+
       let candidates = []
       if (type === 'anime') {
         const seasons = ['winter', 'spring', 'summer', 'fall']
         const currentYear = new Date().getFullYear()
-        
         const randomSeasons = []
         for (let i = 0; i < 4; i++) {
           const randomYear = Math.floor(Math.random() * (currentYear - 2010 + 1)) + 2010
           const randomSeason = seasons[Math.floor(Math.random() * seasons.length)]
           randomSeasons.push({ year: randomYear, season: randomSeason })
         }
-        
         const seasonalResults = await Promise.all(
-          randomSeasons.map(({ year, season }) => 
+          randomSeasons.map(({ year, season }) =>
             getSeasonalAnime(user.access_token, year, season, 50).catch(() => [])
           )
         )
-        
         candidates = seasonalResults.flat()
       } else {
         const ranking = await getMangaRanking(user.access_token, 'all', 100)
         candidates = ranking
       }
-      
-      // Apply minimum score from user preferences
-      let filtered = candidates.filter(item => {
-        const score = item.node?.mean || 0
-        return score >= minScore
-      })
-      
+
+      let filtered = candidates.filter(item => (item.node?.mean || 0) >= minScore)
+
       if (type === 'anime') {
         const allowedMediaTypes = ['tv', 'movie']
+        filtered = filtered.filter(item =>
+          allowedMediaTypes.includes(item.node?.media_type?.toLowerCase() || '')
+        )
         filtered = filtered.filter(item => {
-          const mediaType = item.node?.media_type?.toLowerCase() || ''
-          return allowedMediaTypes.includes(mediaType)
+          const genres = item.node?.genres || []
+          const source = item.node?.source?.toLowerCase() || ''
+          return !genres.some(g => (g.name || g).toLowerCase().includes('donghua')) &&
+                 !source.includes('chinese') && !source.includes('manhua')
         })
       } else {
         const allowedMangaTypes = ['manga', 'light_novel', 'novel', 'one_shot', 'manhwa', 'doujinshi']
@@ -196,125 +197,75 @@ export const useRecommendations = () => {
           return !mediaType || allowedMangaTypes.includes(mediaType)
         })
       }
-      
-      if (type === 'anime') {
-        filtered = filtered.filter(item => {
-          const genres = item.node?.genres || []
-          const source = item.node?.source?.toLowerCase() || ''
-          
-          const isDonghua = genres.some(g => 
-            (g.name || g).toLowerCase().includes('donghua')
-          )
-          
-          const isChineseSource = source.includes('chinese') || source.includes('manhua')
-          
-          return !isDonghua && !isChineseSource
-        })
-      }
-      
-      filtered = filtered.filter(item => 
-        !userListIds.has(item.node.id)
-      )
-      
-      // Apply EXCLUDED genres from user preferences
-      if (excludedGenres && excludedGenres.length > 0) {
-        filtered = filtered.filter(item => {
-          const itemGenres = item.node.genres || []
-          const hasExcludedGenre = itemGenres.some(g => 
+
+      filtered = filtered.filter(item => !userListIds.has(item.node.id))
+
+      if (excludedGenres.length > 0) {
+        filtered = filtered.filter(item =>
+          !item.node.genres?.some(g =>
             excludedGenres.includes(g.id) || excludedGenres.includes(String(g.id))
           )
-          return !hasExcludedGenre
-        })
+        )
       }
-      
-      // Prioritize FAVORITE genres from user preferences
-      let finalFiltered = filtered
-      if (favoriteGenres && favoriteGenres.length > 0) {
+
+      let finalFiltered
+      if (favoriteGenres.length > 0) {
         const withFavorites = filtered.filter(item =>
-          item.node.genres?.some(g => 
+          item.node.genres?.some(g =>
             favoriteGenres.includes(g.id) || favoriteGenres.includes(String(g.id))
           )
         )
         const withoutFavorites = filtered.filter(item =>
-          !item.node.genres?.some(g => 
+          !item.node.genres?.some(g =>
             favoriteGenres.includes(g.id) || favoriteGenres.includes(String(g.id))
           )
         )
-        
-        const shuffledFavorites = shuffleArray(withFavorites)
-        const shuffledOthers = shuffleArray(withoutFavorites)
-        finalFiltered = [...shuffledFavorites, ...shuffledOthers]
+        finalFiltered = [...shuffleArray(withFavorites), ...shuffleArray(withoutFavorites)]
       } else {
         finalFiltered = shuffleArray(filtered)
       }
-      
-      // Remove duplicates
+
       const uniqueIds = new Set()
       finalFiltered = finalFiltered.filter(item => {
         if (uniqueIds.has(item.node.id)) return false
         uniqueIds.add(item.node.id)
         return true
       })
-      
-      // Get collaborative filtering recommendations
+
       const userListIdArray = Array.from(userListIds)
-      const collaborativeRecs = await getCollaborativeRecommendations(
-        user.id,
-        type,
-        userListIdArray,
-        20 // Get more candidates for hybrid scoring
-      )
-      
-      // Convert filtered items to simple format for hybrid scoring
-      const contentBasedItems = finalFiltered.map(item => ({
-        id: item.node.id,
-        ...item.node
-      }))
-      
-      // Create hybrid recommendations (70% content-based, 30% collaborative)
+      const collaborativeRecs = await getCollaborativeRecommendations(user.id, type, userListIdArray, 20)
+
+      const contentBasedItems = finalFiltered.map(item => ({ id: item.node.id, ...item.node }))
+
       let hybridItems = contentBasedItems
       if (collaborativeRecs.length > 0) {
-        hybridItems = createHybridRecommendations(
-          contentBasedItems,
-          collaborativeRecs,
-          0.7 // 70% content weight
-        )
+        hybridItems = createHybridRecommendations(contentBasedItems, collaborativeRecs, 0.7)
       }
-      
-      // Fetch full details for collaborative recommendations not in content-based
+
       const collabItemIds = collaborativeRecs.map(r => r.itemId)
-      const missingIds = collabItemIds.filter(id => 
-        !contentBasedItems.some(item => item.id === id)
-      )
-      
+      const missingIds = collabItemIds.filter(id => !contentBasedItems.some(item => item.id === id))
       if (missingIds.length > 0) {
         const missingDetails = await Promise.all(
           missingIds.slice(0, 3).map(async (id) => {
             try {
-              const details = type === 'anime'
-                ? await getAnimeDetails(user.access_token, id)  
+              return type === 'anime'
+                ? await getAnimeDetails(user.access_token, id)
                 : await getMangaDetails(user.access_token, id)
-              return details
-            } catch (err) {
-              console.error(`Failed to fetch details for ${type} ${id}:`, err)
+            } catch {
               return null
             }
           })
         )
-        
-        const validMissingItems = missingDetails
+        const validMissing = missingDetails
           .filter(Boolean)
           .map(item => ({
             id: item.id,
             ...item,
             collabScore: collaborativeRecs.find(r => r.itemId === item.id)?.score || 0
           }))
-        
-        // Add collaborative-only items to hybrid list
-        hybridItems = [...hybridItems, ...validMissingItems]
+        hybridItems = [...hybridItems, ...validMissing]
       }
-      
-      // Pick top 5 and map to consistent format
+
       const topRecommendations = hybridItems.slice(0, 5).map(item => ({
         id: item.id,
         title: item.title,
@@ -335,30 +286,19 @@ export const useRecommendations = () => {
         popularity: item.popularity,
         type
       }))
-      
-      // Debug: Check if popularity field is present
-      console.log('🔍 Recommendations Debug:', topRecommendations.map(r => ({
-        title: r.title,
-        popularity: r.popularity,
-        mean: r.mean
-      })))
-      
+
       setRecommendations(topRecommendations)
-      
-      // Save to database cache
+
       try {
         await saveRecommendationCache(user.id, type, 'new', topRecommendations, {
           algorithm: 'hybrid',
           contentWeight: 0.7,
           collaborativeUsed: collaborativeRecs.length > 0
         })
-        console.log('Recommendations saved to database cache')
-      } catch (cacheError) {
-        console.error('Failed to cache recommendations:', cacheError)
-        // Don't throw - caching failure shouldn't break recommendations
+      } catch {
+        // caching failure is non-fatal
       }
-      
-      // Save cooldown
+
       saveCooldown(type, 'new', topRecommendations)
     } catch (e) {
       setError(e.message)
@@ -369,20 +309,20 @@ export const useRecommendations = () => {
 
   const getRewatchRecommendations = useCallback(async (type = 'anime', genreFilter = null) => {
     if (!user) return
-    
-    // Check cooldown
-    const { canGenerate, cached } = checkCooldown(type, 'rewatch')
-    if (!canGenerate && cached) {
-      setRecommendations(cached)
-      return
-    }
-    
+
     setLoading(true)
     setError(null)
     setNoRatings(false)
     setCooldownRemaining(null)
-    
+
     try {
+      // Check localStorage cooldown first
+      const { canGenerate, cached } = checkCooldown(type, 'rewatch')
+      if (!canGenerate && cached) {
+        setRecommendations(cached)
+        return
+      }
+
       const userList = type === 'anime' 
         ? await getUserAnimeListCache(user.id)
         : await getUserMangaListCache(user.id)
