@@ -199,17 +199,17 @@ export const AuthProvider = ({ children }) => {
           cacheUserAnimeList(savedUser.id, animeList),
           cacheUserMangaList(savedUser.id, mangaList)
         ])
-        console.log('Step 4b SUCCESS: Cached lists')
-        
+        console.log('Step 4b SUCCESS: Cached lists', { anime: animeList.length, manga: mangaList.length })
+
         userData.animeListCount = animeList.length
         userData.mangaListCount = mangaList.length
-        
-        // Calculate manga statistics
+
         const mangaStats = calculateMangaStatistics(mangaList)
         userData.manga_statistics = mangaStats
-        console.log('Calculated manga_statistics:', mangaStats)
       } catch (cacheError) {
-        console.warn('Failed to cache lists:', cacheError)
+        console.error('Step 4 FAILED: Could not cache lists:', cacheError)
+        // Surface the error so the user knows their list data wasn't synced
+        throw new Error(`Login succeeded but failed to sync your anime/manga list: ${cacheError.message}`)
       }
       
       // Save to local storage
