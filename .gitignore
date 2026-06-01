@@ -22,6 +22,9 @@ neon/.temp
 neon/.branches
 .neon
 
+# Project docs (local only)
+PRD.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
